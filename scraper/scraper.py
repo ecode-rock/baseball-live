@@ -132,9 +132,14 @@ def fetch_game_pitches(game_meta: dict) -> list[dict]:
         print(f"ERROR: /gf fetch failed for game_pk={game_pk}: {exc}", file=sys.stderr)
         return []
 
+    print(f"[scraper] /gf top-level keys: {sorted(data.keys())}")
+
+    # Team abbreviations and game_date live at the top level of the /gf response.
+    # data["home_team_data"]["abbreviation"] and data["away_team_data"]["abbreviation"]
+    # are the authoritative source — do not rely on the schedule lookup for these.
+    home_team = data.get("home_team_data", {}).get("abbreviation", "") or game_meta["home_team"]
+    away_team = data.get("away_team_data", {}).get("abbreviation", "") or game_meta["away_team"]
     game_date = data.get("game_date", "")
-    home_team = game_meta["home_team"]
-    away_team = game_meta["away_team"]
 
     rows = []
     for side in ("home_pitchers", "away_pitchers"):
@@ -148,9 +153,10 @@ def fetch_game_pitches(game_meta: dict) -> list[dict]:
                 if not isinstance(item, dict) or "play_id" not in item:
                     continue
                 row = dict(item)
+                # Overwrite with top-level values — pitch rows may have stale/empty fields
                 row["game_date"]     = game_date
-                row["home_team"]     = home_team or row.get("home_team", "")
-                row["away_team"]     = away_team or row.get("away_team", "")
+                row["home_team"]     = home_team
+                row["away_team"]     = away_team
                 row["double_header"] = game_meta["double_header"]
                 row["game_number"]   = game_meta["game_number"]
                 row["game_pk"]       = int(row.get("game_pk", game_pk))
