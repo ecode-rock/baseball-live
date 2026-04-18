@@ -268,7 +268,7 @@ async function fetchAndProcess(){
   const url=document.getElementById('csv-url').value.trim();
   if(!url){showErr('Enter a CSV URL.');return;}
   setStatus('loading');hideErr();
-  try{const res=await fetch(url,{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);parseAndLoad(await res.text());setStatus('ok');}
+  try{const res=await fetch(url+'?t='+Date.now(),{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);parseAndLoad(await res.text());setStatus('ok');}
   catch(e){setStatus('err');showErr(`Load failed: ${e.message}`);}
 }
 function splitLine(l){const r=[];let c='',q=false;for(let i=0;i<l.length;i++){const ch=l[i];if(ch==='"'){q=!q;}else if(ch===','&&!q){r.push(c);c='';}else c+=ch;}r.push(c);return r;}
@@ -559,6 +559,7 @@ function updateReplayUI(){
 }
 function setReplaySpeed(v){replaySpeedIdx=parseInt(v);document.getElementById('rp-speed-val').textContent=SPEED_LABELS[replaySpeedIdx]||'1x';}
 function toggleLive(){
+  getAX().resume();
   liveActive=!liveActive;const btn=document.getElementById('live-btn');
   btn.classList.toggle('active',liveActive);btn.textContent=liveActive?'⏸ Live':'▶ Auto';
   if(liveActive){schedulePoll();fetchAndProcess();}else{clearTimeout(pollTimer);clearInterval(cdTimer);document.getElementById('countdown-txt').textContent='—';}
@@ -566,7 +567,7 @@ function toggleLive(){
 function schedulePoll(){
   cdSecs=300;document.getElementById('countdown-txt').textContent=fmtCD(cdSecs);clearInterval(cdTimer);
   cdTimer=setInterval(()=>{cdSecs--;document.getElementById('countdown-txt').textContent=fmtCD(cdSecs);if(cdSecs<=0)clearInterval(cdTimer);},1000);
-  clearTimeout(pollTimer);pollTimer=setTimeout(async()=>{if(!liveActive)return;await fetchAndProcess();if(activeGame&&games[activeGame]){const r=games[activeGame].rows;r.sort((a,b)=>parseInt(a.game_total_pitches||0)-parseInt(b.game_total_pitches||0));renderGame(r,false);}schedulePoll();},300000);
+  clearTimeout(pollTimer);pollTimer=setTimeout(async()=>{if(!liveActive)return;await fetchAndProcess();if(activeGame&&games[activeGame]){const r=games[activeGame].rows;r.sort((a,b)=>parseInt(a.game_total_pitches||0)-parseInt(b.game_total_pitches||0));renderGame(r,false);if(sw.tts&&!ttsPlaying)playNextTTS();}schedulePoll();},300000);
 }
 function fmtCD(s){return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;}
 function toggleSW(k){sw[k]=!sw[k];document.getElementById('sw-'+k).classList.toggle('on',sw[k]);if(k==='tts'&&!sw.tts)clearTTS();}
