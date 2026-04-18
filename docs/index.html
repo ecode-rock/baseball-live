@@ -149,11 +149,11 @@ main{flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-hei
 <div class="topbar">
   <div class="logo">MLB <span>LIVE</span></div>
   <div class="topbar-sep"></div>
-  <input type="text" id="csv-url" style="flex:1;min-width:180px" placeholder="https://raw.githubusercontent.com/ecode-rock/baseball-live/main/data/data.csv" value="https://raw.githubusercontent.com/ecode-rock/baseball-live/main/data/data.csv">
-  <button class="btn btn-primary" onclick="fetchAndProcess()">Load</button>
-  <button class="btn btn-live" id="live-btn" onclick="toggleLive()">&#9654; Auto</button>
+  <span class="url-label" style="font-size:12px">game_pk</span>
+  <input type="text" id="game-pk-input" style="width:100px;font-family:var(--font-mono);font-size:13px" placeholder="824451" value="824451">
+  <button class="btn btn-primary" onclick="catchMeUp()" style="font-size:14px;padding:8px 18px">&#9658; Catch me up</button>
   <div class="pill"><div class="dot" id="status-dot"></div><span id="status-text">Idle</span></div>
-  <div class="pill"><span id="countdown-txt">—</span></div>
+  <div class="pill" id="new-pitches-pill" style="display:none;background:rgba(34,197,94,.15);border-color:var(--green);color:var(--green)"><span id="new-pitches-txt">0 new</span></div>
 </div>
 <div class="toolbar">
   <select id="game-select" style="flex:1;min-width:200px" onchange="onGameChange()"><option value="">— load CSV first —</option></select>
@@ -264,11 +264,41 @@ const PC={'FF':'#3b82f6','FA':'#3b82f6','SI':'#ef4444','FT':'#ef4444','SL':'#22c
 const PN={'FF':'4-Seam','FA':'4-Seam','SI':'Sinker','FT':'Sinker','SL':'Slider','ST':'Sweeper','CH':'Changeup','FS':'Splitter','CU':'Curve','KC':'K-Curve','FC':'Cutter','SW':'Sweeper','CS':'Slow Crv','KN':'Knuckle'};
 const BIPC={single:'#22c55e',double:'#3b82f6',triple:'#a855f7',home_run:'#f59e0b',groundout:'#ef4444',flyout:'#ef4444',lineout:'#ef4444',pop_out:'#ef4444',field_out:'#ef4444'};
 
+async function catchMeUp(){
+  const pk=document.getElementById('game-pk-input').value.trim();
+  if(!pk){showErr('Enter a game_pk.');return;}
+  // Unlock audio context on button click
+  try{getAX().resume();}catch(e){}
+  const url=`https://raw.githubusercontent.com/ecode-rock/baseball-live/main/data/data.csv?t=${Date.now()}`;
+  setStatus('loading');hideErr();
+  try{
+    const res=await fetch(url,{cache:'no-store'});
+    if(!res.ok)throw new Error(`HTTP ${res.status}`);
+    const text=await res.text();
+    // Count new pitches before processing
+    const before=seenIds.size;
+    parseAndLoad(text);
+    // If user changed game_pk, auto-select it
+    if(pk&&games[pk]){
+      const sel=document.getElementById('game-select');
+      if(sel)sel.value=pk;
+    }
+    const added=seenIds.size-before;
+    const pill=document.getElementById('new-pitches-pill');
+    if(added>0){
+      pill.style.display='';
+      document.getElementById('new-pitches-txt').textContent=`+${added} new pitches`;
+      setTimeout(()=>{pill.style.display='none';},8000);
+    }
+    setStatus('ok');
+  }catch(e){setStatus('err');showErr(`Load failed: ${e.message}`);}
+}
+
 async function fetchAndProcess(){
-  const url=document.getElementById('csv-url').value.trim();
+  const url=document.getElementById('csv-url')?.value?.trim()||`https://raw.githubusercontent.com/ecode-rock/baseball-live/main/data/data.csv?t=${Date.now()}`;
   if(!url){showErr('Enter a CSV URL.');return;}
   setStatus('loading');hideErr();
-  try{const res=await fetch(url+'?t='+Date.now(),{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);parseAndLoad(await res.text());setStatus('ok');}
+  try{const res=await fetch(url,{cache:'no-store'});if(!res.ok)throw new Error(`HTTP ${res.status}`);parseAndLoad(await res.text());setStatus('ok');}
   catch(e){setStatus('err');showErr(`Load failed: ${e.message}`);}
 }
 function splitLine(l){const r=[];let c='',q=false;for(let i=0;i<l.length;i++){const ch=l[i];if(ch==='"'){q=!q;}else if(ch===','&&!q){r.push(c);c='';}else c+=ch;}r.push(c);return r;}
@@ -288,7 +318,7 @@ function renderGame(rows,init){
 
 function buildScoreboard(rows){
   if(!rows.length)return;const last=rows[rows.length-1],g=games[activeGame];
-  const hr=parseInt(last.home_score)||0,ar=parseInt(last.away_score)||0;
+  let hr=0,ar=0;rows.forEach(r=>{if((r.events||'').toLowerCase().includes('home_run')){if(r.team_batting===g.home)hr++;else ar++;}});
   const tb=last.team_batting===g.away?'Top':'Bot',outs=parseInt(last.outs)||0;
   const r1=last.runnerOn1B==='True'||last.runnerOn1B==='true',r2=last.runnerOn2B==='True'||last.runnerOn2B==='true',r3=last.runnerOn3B==='True'||last.runnerOn3B==='true';
   document.getElementById('scoreboard').innerHTML=`
@@ -559,7 +589,6 @@ function updateReplayUI(){
 }
 function setReplaySpeed(v){replaySpeedIdx=parseInt(v);document.getElementById('rp-speed-val').textContent=SPEED_LABELS[replaySpeedIdx]||'1x';}
 function toggleLive(){
-  getAX().resume();
   liveActive=!liveActive;const btn=document.getElementById('live-btn');
   btn.classList.toggle('active',liveActive);btn.textContent=liveActive?'⏸ Live':'▶ Auto';
   if(liveActive){schedulePoll();fetchAndProcess();}else{clearTimeout(pollTimer);clearInterval(cdTimer);document.getElementById('countdown-txt').textContent='—';}
@@ -567,7 +596,7 @@ function toggleLive(){
 function schedulePoll(){
   cdSecs=300;document.getElementById('countdown-txt').textContent=fmtCD(cdSecs);clearInterval(cdTimer);
   cdTimer=setInterval(()=>{cdSecs--;document.getElementById('countdown-txt').textContent=fmtCD(cdSecs);if(cdSecs<=0)clearInterval(cdTimer);},1000);
-  clearTimeout(pollTimer);pollTimer=setTimeout(async()=>{if(!liveActive)return;await fetchAndProcess();if(activeGame&&games[activeGame]){const r=games[activeGame].rows;r.sort((a,b)=>parseInt(a.game_total_pitches||0)-parseInt(b.game_total_pitches||0));renderGame(r,false);if(sw.tts&&!ttsPlaying)playNextTTS();}schedulePoll();},300000);
+  clearTimeout(pollTimer);pollTimer=setTimeout(async()=>{if(!liveActive)return;await fetchAndProcess();if(activeGame&&games[activeGame]){const r=games[activeGame].rows;r.sort((a,b)=>parseInt(a.game_total_pitches||0)-parseInt(b.game_total_pitches||0));renderGame(r,false);}schedulePoll();},300000);
 }
 function fmtCD(s){return `${Math.floor(s/60).toString().padStart(2,'0')}:${(s%60).toString().padStart(2,'0')}`;}
 function toggleSW(k){sw[k]=!sw[k];document.getElementById('sw-'+k).classList.toggle('on',sw[k]);if(k==='tts'&&!sw.tts)clearTTS();}
@@ -578,18 +607,21 @@ function hideErr(){document.getElementById('errbar').style.display='none';}
 function escH(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
 
 function loadDemo(){
-  parseAndLoad(`game_pk,game_date,home_team,away_team,home_score,away_score,type,play_id,inning,ab_number,cap_index,outs,batter,stand,batter_name,pitcher,p_throws,pitcher_name,team_batting,team_fielding,team_batting_id,team_fielding_id,result,des,events,contextMetrics,strikes,balls,pre_strikes,pre_balls,call,call_name,pitch_call,is_strike_swinging,result_code,pitch_type,pitch_name,description,start_speed,end_speed,sz_top,sz_bot,extension,plateTime,zone,spin_rate,breakX,inducedBreakZ,breakZ,px,pz,pfxX,pfxZ,pfxZWithGravity,pfxXWithGravity,pfxXNoAbs,plateTimeSZDepth,savantIsInZone,isInZone,isSword,is_bip_out,is_abs_challenge,plate_x,plate_z,pitch_number,player_total_pitches,player_total_pitches_pitch_types,pitcher_pa_number,pitcher_time_thru_order,game_total_pitches,hit_distance,xba,is_barrel,hc_x_ft,hc_y_ft,hit_speed,hit_angle,launch_speed,launch_angle,runnerOn1B,runnerOn2B,runnerOn3B,is_last_pitch,double_header,game_number,batSpeed
-831452,2026-03-19,STL,WSH,0,1,pitch,id-001,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,0,0,0,B,Ball,ball,False,B,FF,4-Seam Fastball,Ball,93.4,85.9,3.49,1.76,6.34,0.4,13,2092,7.6,17.2,-14,-0.938,2.2579,-0.63,1.43,-1.17,7.6,-0.63,0.38,False,False,,True,False,-0.938,2.2579,1,1,1,1,1,1,,,,,,,,,,,False,N,1,
-831452,2026-03-19,STL,WSH,0,1,pitch,id-002,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,1,0,1,S,Strike,foul,False,F,FF,4-Seam Fastball,Foul,93.7,86,3.49,1.76,6.41,0.4,3,2258,2.8,16.3,-14.6,0.4257,3.0274,-0.23,1.36,-1.22,2.8,-0.23,0.38,True,True,,True,False,0.4257,3.0274,2,2,2,1,1,2,,,,,,,,,,,False,N,1,
-831452,2026-03-19,STL,WSH,0,1,pitch,id-003,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,,,1,1,1,1,S,Strike,swinging_strike,True,S,SI,Sinker,Swinging Strike,94.6,87.4,3.49,1.76,6.25,0.4,4,2318,15,14.2,-16.2,-0.3625,2.79,-1.25,1.18,-1.35,15,-1.25,0.37,True,True,,True,False,-0.3625,2.79,3,3,1,1,1,3,,,,,,,,,,,False,N,1,
-831452,2026-03-19,STL,WSH,0,1,pitch,id-004,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,Groundout,"James Wood grounds out, third baseman Nolan Gorman to first baseman Alec Burleson.",Groundout,,2,2,2,2,X,In Play,hit_into_play,False,X,SL,Slider,"In play, out(s)",86.1,79.3,3.49,1.76,6.16,0.44,8,2313,2.8,6.7,-30,-0.0084,1.7364,0.23,0.56,-2.5,0.23,0.23,0.41,True,True,False,True,False,-0.0084,1.7364,4,4,2,1,1,4,7,0.12,0,105,93,65,-20,65,-20,,,, True,N,1,68.5
-831452,2026-03-19,STL,WSH,0,1,pitch,id-005,1,2,0,1,683083,R,Nasim Nunez,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,0,0,0,B,Ball,ball,False,B,FF,4-Seam Fastball,Ball,95.9,87.7,3.04,1.54,6.01,0.39,12,2249,7,18.1,-11.5,1.3545,2.4506,-0.58,1.51,-0.96,7,-0.58,0.37,False,False,,False,False,1.3545,2.4506,1,5,4,2,1,5,,,,,,,,,,,False,N,1,
-831452,2026-03-19,STL,WSH,0,1,pitch,id-006,1,2,0,1,683083,R,Nasim Nunez,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,1,0,1,S,Strike,foul,False,F,FF,4-Seam Fastball,Foul,94.7,88.3,3.04,1.54,6.47,0.39,5,2271,9.5,14.5,-15.5,-0.2365,2.3451,-0.79,1.21,-1.29,9.5,-0.79,0.37,True,True,,False,False,-0.2365,2.3451,2,6,5,2,1,6,,,,,,,,,,,False,N,1,
-831452,2026-03-19,STL,WSH,0,1,pitch,id-007,1,2,0,1,683083,R,Nasim Nunez,687273,L,Quinn Mathews,WSH,STL,120,138,Home Run,"Nasim Nunez homers (1) on a fly ball to left field.",home_run,,1,2,1,2,X,In Play,hit_into_play,False,X,FF,4-Seam Fastball,"In play, run(s)",96.2,88.5,3.04,1.54,6.1,0.39,2,2380,4.1,18.8,-10.8,-0.42,3.12,-0.34,1.57,-0.9,4.1,-0.34,0.37,True,True,False,False,False,-0.42,3.12,3,7,6,2,1,7,412,0.89,1,68,325,109,28,109,28,,,, True,N,1,76.2`);
+  parseAndLoad(`game_pk,game_date,home_team,away_team,type,play_id,inning,ab_number,cap_index,outs,batter,stand,batter_name,pitcher,p_throws,pitcher_name,team_batting,team_fielding,team_batting_id,team_fielding_id,result,des,events,contextMetrics,strikes,balls,pre_strikes,pre_balls,call,call_name,pitch_call,is_strike_swinging,result_code,pitch_type,pitch_name,description,start_speed,end_speed,sz_top,sz_bot,extension,plateTime,zone,spin_rate,breakX,inducedBreakZ,breakZ,px,pz,pfxX,pfxZ,pfxZWithGravity,pfxXWithGravity,pfxXNoAbs,plateTimeSZDepth,savantIsInZone,isInZone,isSword,is_bip_out,is_abs_challenge,plate_x,plate_z,pitch_number,player_total_pitches,player_total_pitches_pitch_types,pitcher_pa_number,pitcher_time_thru_order,game_total_pitches,hit_distance,xba,is_barrel,hc_x_ft,hc_y_ft,hit_speed,hit_angle,launch_speed,launch_angle,runnerOn1B,runnerOn2B,runnerOn3B,is_last_pitch,double_header,game_number,batSpeed
+831452,2026-03-19,STL,WSH,pitch,id-001,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,0,0,0,B,Ball,ball,False,B,FF,4-Seam Fastball,Ball,93.4,85.9,3.49,1.76,6.34,0.4,13,2092,7.6,17.2,-14,-0.938,2.2579,-0.63,1.43,-1.17,7.6,-0.63,0.38,False,False,,True,False,-0.938,2.2579,1,1,1,1,1,1,,,,,,,,,,,False,N,1,
+831452,2026-03-19,STL,WSH,pitch,id-002,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,1,0,1,S,Strike,foul,False,F,FF,4-Seam Fastball,Foul,93.7,86,3.49,1.76,6.41,0.4,3,2258,2.8,16.3,-14.6,0.4257,3.0274,-0.23,1.36,-1.22,2.8,-0.23,0.38,True,True,,True,False,0.4257,3.0274,2,2,2,1,1,2,,,,,,,,,,,False,N,1,
+831452,2026-03-19,STL,WSH,pitch,id-003,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,,,1,1,1,1,S,Strike,swinging_strike,True,S,SI,Sinker,Swinging Strike,94.6,87.4,3.49,1.76,6.25,0.4,4,2318,15,14.2,-16.2,-0.3625,2.79,-1.25,1.18,-1.35,15,-1.25,0.37,True,True,,True,False,-0.3625,2.79,3,3,1,1,1,3,,,,,,,,,,,False,N,1,
+831452,2026-03-19,STL,WSH,pitch,id-004,1,1,0,1,695578,L,James Wood,687273,L,Quinn Mathews,WSH,STL,120,138,Groundout,"James Wood grounds out, third baseman Nolan Gorman to first baseman Alec Burleson.",Groundout,,2,2,2,2,X,In Play,hit_into_play,False,X,SL,Slider,"In play, out(s)",86.1,79.3,3.49,1.76,6.16,0.44,8,2313,2.8,6.7,-30,-0.0084,1.7364,0.23,0.56,-2.5,0.23,0.23,0.41,True,True,False,True,False,-0.0084,1.7364,4,4,2,1,1,4,7,0.12,0,105,93,65,-20,65,-20,,,, True,N,1,68.5
+831452,2026-03-19,STL,WSH,pitch,id-005,1,2,0,1,683083,R,Nasim Nunez,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,0,0,0,B,Ball,ball,False,B,FF,4-Seam Fastball,Ball,95.9,87.7,3.04,1.54,6.01,0.39,12,2249,7,18.1,-11.5,1.3545,2.4506,-0.58,1.51,-0.96,7,-0.58,0.37,False,False,,False,False,1.3545,2.4506,1,5,4,2,1,5,,,,,,,,,,,False,N,1,
+831452,2026-03-19,STL,WSH,pitch,id-006,1,2,0,1,683083,R,Nasim Nunez,687273,L,Quinn Mathews,WSH,STL,120,138,,,0,1,0,1,S,Strike,foul,False,F,FF,4-Seam Fastball,Foul,94.7,88.3,3.04,1.54,6.47,0.39,5,2271,9.5,14.5,-15.5,-0.2365,2.3451,-0.79,1.21,-1.29,9.5,-0.79,0.37,True,True,,False,False,-0.2365,2.3451,2,6,5,2,1,6,,,,,,,,,,,False,N,1,
+831452,2026-03-19,STL,WSH,pitch,id-007,1,2,0,1,683083,R,Nasim Nunez,687273,L,Quinn Mathews,WSH,STL,120,138,Home Run,"Nasim Nunez homers (1) on a fly ball to left field.",home_run,,1,2,1,2,X,In Play,hit_into_play,False,X,FF,4-Seam Fastball,"In play, run(s)",96.2,88.5,3.04,1.54,6.1,0.39,2,2380,4.1,18.8,-10.8,-0.42,3.12,-0.34,1.57,-0.9,4.1,-0.34,0.37,True,True,False,False,False,-0.42,3.12,3,7,6,2,1,7,412,0.89,1,68,325,109,28,109,28,,,, True,N,1,76.2`);
   setStatus('ok');
 }
 loadDemo();
-fetchAndProcess();
+// Auto-enable TTS + Every pitch toggles so user doesn't have to turn them on
+sw.tts=true;document.getElementById('sw-tts').classList.add('on');
+// Give the user a moment to see the demo then auto-catch-up on first load
+
 </script>
 </body>
 </html>
