@@ -30,7 +30,7 @@ OUT_PATH = DATA_DIR / "data.csv"
 
 # ── Column Whitelist ────────────────────────────────────────────────────────────
 WHITELIST = [
-    "game_pk", "game_date", "home_team", "away_team", "type", "play_id",
+    "game_pk", "game_date", "home_team", "away_team", "home_score", "away_score", "type", "play_id",
     "inning", "ab_number", "cap_index", "outs",
     "batter", "stand", "batter_name",
     "pitcher", "p_throws", "pitcher_name",
@@ -58,7 +58,7 @@ WHITELIST = [
 ]
 
 NUMERIC_COLS = [
-    "game_pk", "inning", "ab_number", "cap_index", "outs",
+    "game_pk", "inning", "ab_number", "cap_index", "outs", "home_score", "away_score",
     "batter", "pitcher", "team_batting_id", "team_fielding_id",
     "strikes", "balls", "pre_strikes", "pre_balls",
     "start_speed", "end_speed", "sz_top", "sz_bot",
@@ -141,6 +141,10 @@ def fetch_game_pitches(game_meta: dict) -> list[dict]:
     away_team = data.get("away_team_data", {}).get("abbreviation", "") or game_meta["away_team"]
     game_date = data.get("game_date", "")
 
+    _ls_teams = data.get("scoreboard", {}).get("linescore", {}).get("teams", {})
+    home_score = _ls_teams.get("home", {}).get("runs", None)
+    away_score = _ls_teams.get("away", {}).get("runs", None)
+
     rows = []
     for side in ("home_pitchers", "away_pitchers"):
         pitcher_dict = data.get(side, {})
@@ -157,6 +161,8 @@ def fetch_game_pitches(game_meta: dict) -> list[dict]:
                 row["game_date"]     = game_date
                 row["home_team"]     = home_team
                 row["away_team"]     = away_team
+                row["home_score"]    = home_score
+                row["away_score"]    = away_score
                 row["double_header"] = game_meta["double_header"]
                 row["game_number"]   = game_meta["game_number"]
                 row["game_pk"]       = int(row.get("game_pk", game_pk))

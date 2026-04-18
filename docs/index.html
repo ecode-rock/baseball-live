@@ -288,7 +288,7 @@ function renderGame(rows,init){
 
 function buildScoreboard(rows){
   if(!rows.length)return;const last=rows[rows.length-1],g=games[activeGame];
-  let hr=0,ar=0;rows.forEach(r=>{if((r.events||'').toLowerCase().includes('home_run')){if(r.team_batting===g.home)hr++;else ar++;}});
+  const hr=parseInt(last.home_score)||0,ar=parseInt(last.away_score)||0;
   const tb=last.team_batting===g.away?'Top':'Bot',outs=parseInt(last.outs)||0;
   const r1=last.runnerOn1B==='True'||last.runnerOn1B==='true',r2=last.runnerOn2B==='True'||last.runnerOn2B==='true',r3=last.runnerOn3B==='True'||last.runnerOn3B==='true';
   document.getElementById('scoreboard').innerHTML=`
