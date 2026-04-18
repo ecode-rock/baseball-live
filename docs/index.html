@@ -149,7 +149,7 @@ main{flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-hei
 <div class="topbar">
   <div class="logo">MLB <span>LIVE</span></div>
   <div class="topbar-sep"></div>
-  <input type="text" id="csv-url" style="flex:1;min-width:180px" placeholder="https://raw.githubusercontent.com/you/baseball-live/main/data/data.csv">
+  <input type="text" id="csv-url" style="flex:1;min-width:180px" placeholder="https://raw.githubusercontent.com/ecode-rock/baseball-live/main/data/data.csv" value="https://raw.githubusercontent.com/ecode-rock/baseball-live/main/data/data.csv">
   <button class="btn btn-primary" onclick="fetchAndProcess()">Load</button>
   <button class="btn btn-live" id="live-btn" onclick="toggleLive()">&#9654; Auto</button>
   <div class="pill"><div class="dot" id="status-dot"></div><span id="status-text">Idle</span></div>
@@ -589,6 +589,7 @@ function loadDemo(){
   setStatus('ok');
 }
 loadDemo();
+fetchAndProcess();
 </script>
 </body>
 </html>
